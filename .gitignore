@@ -1,55 +1,32 @@
-# ===========================
-# Dependency folders
-# ===========================
-node_modules/
-resto/node_modules/
+# Specifies intentionally untracked files to ignore when using Git
+# http://git-scm.com/docs/gitignore
 
-# ===========================
-# Build output
-# ===========================
-resto/dist/
-resto/.ionic/
-
-# ===========================
-# Environment / secrets
-# ===========================
-.env
-.env.local
-.env.*.local
-resto/.env
-resto/.env.local
-
-# ===========================
-# OS files
-# ===========================
+*~
+*.sw[mnpcod]
+.tmp
+*.tmp
+*.tmp.*
+*.sublime-project
+*.sublime-workspace
 .DS_Store
 Thumbs.db
-desktop.ini
+UserInterfaceState.xcuserstate
+$RECYCLE.BIN/
 
-# ===========================
-# IDE / Editor
-# ===========================
-.vscode/
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-
-# ===========================
-# Logs
-# ===========================
 *.log
+log.txt
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# ===========================
-# TypeScript cache
-# ===========================
-*.tsbuildinfo
-
-# ===========================
-# Vite cache
-# ===========================
-resto/.vite/
+/.idea
+/.ionic
+/.sass-cache
+/.sourcemaps
+/.versions
+/.vscode/*
+!/.vscode/extensions.json
+/coverage
+/dist
+/node_modules
+/platforms
+/plugins
+/www
