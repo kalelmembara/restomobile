@@ -1,3 +1,7 @@
+/* Tailwind CSS — skip @base to avoid conflict with Ionic reset */
+@tailwind components;
+@tailwind utilities;
+
 /* Base Components Styles */
 
 /* 1. Buttons */

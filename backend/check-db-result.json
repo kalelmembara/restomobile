@@ -1,0 +1,92 @@
+{
+  "kategori": [
+    {
+      "id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 3,
+      "nama_kategori": "Snack"
+    }
+  ],
+  "menu_join": [
+    {
+      "id": 1,
+      "nama_menu": "Nasi Goreng Spesial",
+      "kategori_id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 2,
+      "nama_menu": "Mie Goreng",
+      "kategori_id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 3,
+      "nama_menu": "Ayam Bakar",
+      "kategori_id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 4,
+      "nama_menu": "Soto Ayam",
+      "kategori_id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 5,
+      "nama_menu": "Gado-Gado",
+      "kategori_id": 1,
+      "nama_kategori": "Makanan"
+    },
+    {
+      "id": 6,
+      "nama_menu": "Es Teh Manis",
+      "kategori_id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 7,
+      "nama_menu": "Es Jeruk",
+      "kategori_id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 8,
+      "nama_menu": "Kopi Hitam",
+      "kategori_id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 9,
+      "nama_menu": "Jus Alpukat",
+      "kategori_id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 10,
+      "nama_menu": "Air Mineral",
+      "kategori_id": 2,
+      "nama_kategori": "Minuman"
+    },
+    {
+      "id": 11,
+      "nama_menu": "Pisang Goreng",
+      "kategori_id": 3,
+      "nama_kategori": "Snack"
+    },
+    {
+      "id": 12,
+      "nama_menu": "Tempe Mendoan",
+      "kategori_id": 3,
+      "nama_kategori": "Snack"
+    }
+  ],
+  "error": "Incorrect TIMESTAMP value: ''",
+  "success": false
+}

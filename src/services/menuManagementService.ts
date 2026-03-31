@@ -26,6 +26,11 @@ export interface Menu {
   updated_at?: string;
 }
 
+export interface Category {
+  id: number
+  name: string
+}
+
 export const menuManagementService = {
   // ========== CATEGORIES ==========
 

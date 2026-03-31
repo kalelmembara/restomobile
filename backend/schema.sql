@@ -1,161 +1,94 @@
--- RestaurantApp Database Schema
--- Created: 2026-02-28
--- Description: Database untuk aplikasi manajemen restoran
-
 -- =====================================================
--- TRANSACTIONS TABLE
--- =====================================================
-CREATE TABLE IF NOT EXISTS transactions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  transaction_id TEXT UNIQUE NOT NULL,
-  date TEXT NOT NULL,  -- Format: YYYY-MM-DD
-  time TEXT NOT NULL,  -- Format: HH:MM:SS
-  items TEXT NOT NULL,  -- JSON format: [{"name":"...", "qty":..., "price":...}, ...]
-  total REAL NOT NULL,  -- Total harga transaksi
-  payment_method TEXT NOT NULL,  -- cash, transfer, qris
-  status TEXT DEFAULT 'completed',  -- completed, cancelled
-  note TEXT,  -- Catatan pesanan (opsional)
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_date (date),
-  INDEX idx_payment_method (payment_method),
-  INDEX idx_status (status)
-);
-
--- =====================================================
--- DAILY SUMMARY TABLE
--- =====================================================
-CREATE TABLE IF NOT EXISTS daily_summary (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  date TEXT UNIQUE NOT NULL,  -- Format: YYYY-MM-DD
-  total_sales REAL DEFAULT 0,  -- Total penjualan hari itu
-  transaction_count INTEGER DEFAULT 0,  -- Jumlah transaksi
-  top_product TEXT,  -- Produk terlaris
-  cash_sales REAL DEFAULT 0,  -- Penjualan via cash
-  transfer_sales REAL DEFAULT 0,  -- Penjualan via transfer
-  qris_sales REAL DEFAULT 0,  -- Penjualan via QRIS
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- =====================================================
--- SAMPLE INSERT QUERIES
+-- RestoApp - MySQL Database Schema
+-- Database: db_resto
+-- Import file ini lewat phpMyAdmin atau MySQL CLI
 -- =====================================================
 
--- Insert sample transaction
-INSERT INTO transactions (
-  transaction_id,
-  date,
-  time,
-  items,
-  total,
-  payment_method,
-  status,
-  note
-) VALUES (
-  'TRX202602281430',
-  '2026-02-28',
-  '14:30:45',
-  '[{"name":"Nasi Goreng Spesial","qty":2,"price":25000},{"name":"Teh Dingin","qty":2,"price":5000}]',
-  60000,
-  'cash',
-  'completed',
-  'Tanpa gula, pedas sedang'
-);
+CREATE DATABASE IF NOT EXISTS db_resto
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE db_resto;
+
+-- ─── TABEL KATEGORI ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS kategori (
+  id              INT             NOT NULL AUTO_INCREMENT,
+  nama_kategori   VARCHAR(100)    NOT NULL,
+  deskripsi       TEXT,
+  created_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_nama_kategori (nama_kategori)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── TABEL MENU ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS menu (
+  id              INT             NOT NULL AUTO_INCREMENT,
+  kategori_id     INT             NOT NULL,
+  nama_menu       VARCHAR(200)    NOT NULL,
+  deskripsi       TEXT,
+  harga           DECIMAL(10,2)   NOT NULL DEFAULT 0,
+  image           VARCHAR(255),
+  stok            INT             DEFAULT 999,
+  status          ENUM('available','unavailable') DEFAULT 'available',
+  created_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMP       NULL DEFAULT NULL,
+  PRIMARY KEY (id),
+  KEY fk_menu_kategori (kategori_id),
+  CONSTRAINT fk_menu_kategori FOREIGN KEY (kategori_id) REFERENCES kategori (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── TABEL TRANSAKSI ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS transaksi (
+  id              INT             NOT NULL AUTO_INCREMENT,
+  transaction_id  VARCHAR(50)     NOT NULL,
+  tanggal         DATE            NOT NULL,
+  waktu           TIME            NOT NULL,
+  items           JSON            NOT NULL,
+  total           DECIMAL(12,2)   NOT NULL DEFAULT 0,
+  payment_method  ENUM('cash','transfer','qris') DEFAULT 'cash',
+  status          ENUM('completed','cancelled','pending') DEFAULT 'completed',
+  catatan         TEXT,
+  nama_pelanggan  VARCHAR(100),
+  created_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_transaction_id (transaction_id),
+  KEY idx_tanggal (tanggal),
+  KEY idx_payment (payment_method),
+  KEY idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
--- USEFUL QUERIES
+-- DATA CONTOH (Sample Data)
 -- =====================================================
 
--- Get daily summary
-SELECT 
-  date,
-  COUNT(*) as transaction_count,
-  SUM(total) as total_sales,
-  GROUP_CONCAT(DISTINCT items) as items_list
-FROM transactions
-WHERE date = '2026-02-28' AND status = 'completed'
-GROUP BY date;
+-- Kategori
+INSERT IGNORE INTO kategori (nama_kategori, deskripsi) VALUES
+  ('Makanan',  'Menu makanan utama dan lauk'),
+  ('Minuman',  'Minuman dingin dan panas'),
+  ('Snack',    'Cemilan dan makanan ringan'),
+  ('Dessert',  'Makanan penutup');
 
--- Get revenue by payment method
-SELECT 
-  payment_method,
-  COUNT(*) as transaction_count,
-  SUM(total) as total_sales
-FROM transactions
-WHERE date = '2026-02-28' AND status = 'completed'
-GROUP BY payment_method;
+-- Menu Makanan
+INSERT IGNORE INTO menu (kategori_id, nama_menu, deskripsi, harga, stok) VALUES
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Nasi Goreng Spesial',  'Nasi goreng dengan telur, ayam, dan kerupuk',         25000, 50),
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Mie Goreng Jawa',      'Mie goreng bumbu jawa dengan telur dan sayuran',      22000, 50),
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Ayam Bakar Madu',      'Ayam bakar dengan olesan madu manis gurih',            30000, 30),
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Sate Ayam',            'Sate ayam 10 tusuk dengan bumbu kacang dan lontong',  28000, 40),
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Gado-Gado',            'Sayuran segar dengan saus kacang dan kerupuk',        20000, 35),
+  ((SELECT id FROM kategori WHERE nama_kategori='Makanan'), 'Bakso Kuah',           'Bakso daging sapi asli dengan kuah kaldu gurih',      18000, 60);
 
--- Get weekly statistics
-SELECT 
-  strftime('%w', date) as day_of_week,
-  SUM(total) as daily_total
-FROM transactions
-WHERE status = 'completed'
-  AND date >= date('now', '-7 days')
-GROUP BY day_of_week
-ORDER BY day_of_week;
+-- Menu Minuman
+INSERT IGNORE INTO menu (kategori_id, nama_menu, deskripsi, harga, stok) VALUES
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Es Teh Manis',   'Teh manis dingin dengan es batu',       5000, 99),
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Es Jeruk',       'Jeruk peras segar dengan es batu',      7000, 99),
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Kopi Tubruk',    'Kopi tubruk asli cara tradisional',     8000, 99),
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Jus Alpukat',    'Jus alpukat creamy dengan susu',       15000, 50),
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Es Campur',      'Minuman segar campuran buah dan jelly', 12000, 40),
+  ((SELECT id FROM kategori WHERE nama_kategori='Minuman'), 'Air Mineral',    'Air mineral botol 600ml',               4000, 99);
 
--- Get monthly statistics
-SELECT 
-  CAST((strftime('%d', date) - 1) / 7 AS INTEGER) as week,
-  SUM(total) as weekly_total
-FROM transactions
-WHERE status = 'completed'
-  AND date >= date('now', '-30 days')
-GROUP BY week
-ORDER BY week;
-
--- Get top products of the day
--- Note: Requires parsing JSON, so this is pseudo-SQL
--- In real implementation, use backend code to parse JSON
-SELECT 
-  date,
-  GROUP_CONCAT(items) as items_json
-FROM transactions
-WHERE date = '2026-02-28' AND status = 'completed'
-GROUP BY date;
-
--- Get transaction by date range
-SELECT * FROM transactions
-WHERE date BETWEEN '2026-02-01' AND '2026-02-28'
-ORDER BY date DESC, time DESC;
-
--- Get transaction statistics
-SELECT 
-  DATE(created_at) as transaction_date,
-  COUNT(*) as total_transactions,
-  AVG(total) as avg_transaction_value,
-  MIN(total) as min_transaction_value,
-  MAX(total) as max_transaction_value,
-  SUM(total) as total_revenue
-FROM transactions
-WHERE status = 'completed'
-GROUP BY DATE(created_at)
-ORDER BY transaction_date DESC;
-
--- =====================================================
--- MAINTENANCE QUERIES
--- =====================================================
-
--- Clear old transactions (older than 90 days)
-DELETE FROM transactions
-WHERE date < date('now', '-90 days');
-
--- Count total transactions
-SELECT COUNT(*) as total_transactions FROM transactions;
-
--- Get database size info
-SELECT 
-  (SELECT COUNT(*) FROM transactions) as transaction_count,
-  (SELECT SUM(total) FROM transactions WHERE status = 'completed') as total_revenue
-FROM transactions LIMIT 1;
-
--- =====================================================
--- INDEXES FOR PERFORMANCE
--- =====================================================
-
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-CREATE INDEX IF NOT EXISTS idx_transactions_payment_method ON transactions(payment_method);
-CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
-CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at);
-CREATE INDEX IF NOT EXISTS idx_daily_summary_date ON daily_summary(date);
+-- Menu Snack
+INSERT IGNORE INTO menu (kategori_id, nama_menu, deskripsi, harga, stok) VALUES
+  ((SELECT id FROM kategori WHERE nama_kategori='Snack'), 'Kentang Goreng',  'Kentang goreng crispy dengan saus',      15000, 50),
+  ((SELECT id FROM kategori WHERE nama_kategori='Snack'), 'Pisang Goreng',   'Pisang goreng crispy topping coklat',    10000, 40),
+  ((SELECT id FROM kategori WHERE nama_kategori='Snack'), 'Cireng Isi',      'Cireng isi daging dengan saus cuka',     12000, 45);

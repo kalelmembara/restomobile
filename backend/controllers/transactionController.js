@@ -1,212 +1,193 @@
-const db = require('../db');
+/**
+ * Transaction Controller - MySQL Version
+ * Database: db_resto (tabel: transaksi)
+ */
 
-// Generate transaction ID
+const db = require('../config/database');
+
+// ─── HELPER: Generate Transaction ID ─────────────────────────────────────────
 function generateTransactionId() {
-  const date = new Date();
+  const date    = new Date();
   const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
   const timeStr = date.getTime().toString().slice(-6);
   return `TRX${dateStr}${timeStr}`;
 }
 
-// Create new transaction
-function createTransaction(req, res) {
+// ─── CREATE TRANSACTION ───────────────────────────────────────────────────────
+async function createTransaction(req, res) {
   const { date, time, items, total, paymentMethod, status = 'completed', note, customerName } = req.body;
 
-  // Validasi input
   if (!date || !time || !items || total === undefined || !paymentMethod) {
     return res.status(400).json({
-      error: 'Missing required fields',
+      error:    'Field tidak lengkap',
       required: ['date', 'time', 'items', 'total', 'paymentMethod']
     });
   }
 
   const transactionId = generateTransactionId();
-  const itemsJson = JSON.stringify(items);
+  const itemsJson     = JSON.stringify(items);
 
-  const sql = `
-    INSERT INTO transactions (transaction_id, date, time, items, total, payment_method, status, note, customer_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(sql, [transactionId, date, time, itemsJson, total, paymentMethod, status, note, customerName || 'Unknown'], function(err) {
-    if (err) {
-      console.error('Error creating transaction:', err);
-      return res.status(500).json({ error: 'Failed to create transaction', details: err.message });
-    }
+  try {
+    await db.query(
+      `INSERT INTO transaksi (transaction_id, tanggal, waktu, items, total, payment_method, status, catatan, nama_pelanggan)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [transactionId, date, time, itemsJson, total, paymentMethod, status, note || null, customerName || 'Guest']
+    );
 
     res.status(201).json({
-      success: true,
-      id: transactionId,
+      success:       true,
+      id:            transactionId,
       transactionId: transactionId,
-      message: 'Transaction created successfully'
+      message:       'Transaksi berhasil dibuat'
     });
-  });
+  } catch (err) {
+    console.error('createTransaction error:', err.message);
+    res.status(500).json({ error: 'Gagal membuat transaksi', details: err.message });
+  }
 }
 
-// Get all transactions
-function getTransactions(req, res) {
+// ─── GET ALL TRANSACTIONS ─────────────────────────────────────────────────────
+async function getTransactions(req, res) {
   const { date } = req.query;
 
-  // ✅ Define confirmed statuses
-  const CONFIRMED_STATUSES = ['completed', 'confirmed', 'paid'];
-  const placeholders = CONFIRMED_STATUSES.map(() => '?').join(',');
+  try {
+    let sql    = `SELECT * FROM transaksi WHERE status IN ('completed','confirmed','paid') ORDER BY created_at DESC`;
+    let params = [];
 
-  let sql = `SELECT * FROM transactions WHERE status IN (${placeholders}) ORDER BY created_at DESC`;
-  let params = [...CONFIRMED_STATUSES];
-
-  if (date) {
-    sql = `SELECT * FROM transactions WHERE date = ? AND status IN (${placeholders}) ORDER BY created_at DESC`;
-    params = [date, ...CONFIRMED_STATUSES];
-  }
-
-  db.all(sql, params, (err, rows) => {
-    if (err) {
-      console.error('Error fetching transactions:', err);
-      return res.status(500).json({ error: 'Failed to fetch transactions' });
+    if (date) {
+      sql    = `SELECT * FROM transaksi WHERE tanggal = ? AND status IN ('completed','confirmed','paid') ORDER BY created_at DESC`;
+      params = [date];
     }
 
-    // Parse items JSON
-    const transactions = rows.map(row => ({
+    const [rows] = await db.query(sql, params);
+
+    const transactions = (rows || []).map(row => ({
       ...row,
-      items: JSON.parse(row.items)
+      items: typeof row.items === 'string' ? JSON.parse(row.items) : row.items
     }));
 
     res.json(transactions);
-  });
+  } catch (err) {
+    console.error('getTransactions error:', err.message);
+    res.status(500).json({ error: 'Gagal mengambil data transaksi', details: err.message });
+  }
 }
 
-// Get daily summary
-function getDailySummary(req, res) {
-  const { date } = req.query;
-  const queryDate = date || new Date().toISOString().split('T')[0];
+// ─── GET DAILY SUMMARY ────────────────────────────────────────────────────────
+async function getDailySummary(req, res) {
+  const { date }    = req.query;
+  const queryDate   = date || new Date().toISOString().split('T')[0];
 
-  // ✅ Include all confirmed statuses
-  const CONFIRMED_STATUSES = ['completed', 'confirmed', 'paid'];
-  const placeholders = CONFIRMED_STATUSES.map(() => '?').join(',');
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         tanggal,
+         COUNT(*)   AS transactionCount,
+         SUM(total) AS totalSales,
+         GROUP_CONCAT(items SEPARATOR '|||') AS itemsList
+       FROM transaksi
+       WHERE tanggal = ? AND status IN ('completed','confirmed','paid')
+       GROUP BY tanggal`,
+      [queryDate]
+    );
 
-  const sql = `
-    SELECT 
-      date,
-      COUNT(*) as transactionCount,
-      SUM(total) as totalSales,
-      GROUP_CONCAT(DISTINCT items) as itemsList
-    FROM transactions
-    WHERE date = ? AND status IN (${placeholders})
-    GROUP BY date
-  `;
-
-  db.get(sql, [queryDate, ...CONFIRMED_STATUSES], (err, row) => {
-    if (err) {
-      console.error('Error fetching daily summary:', err);
-      return res.status(500).json({ error: 'Failed to fetch summary' });
+    if (!rows || rows.length === 0) {
+      return res.json({ totalSales: 0, transactionCount: 0, topProduct: '-' });
     }
 
-    if (!row) {
-      return res.json({
-        totalSales: 0,
-        transactionCount: 0,
-        topProduct: '-'
-      });
-    }
+    const row        = rows[0];
+    let topProduct   = '-';
 
-    // Calculate top product
-    let topProduct = '-';
     if (row.itemsList) {
-      const productCount = {};
       try {
-        const allItems = row.itemsList.split(',').map(item => JSON.parse(item)).flat();
-        allItems.forEach(item => {
-          productCount[item.name] = (productCount[item.name] || 0) + item.qty;
+        const productCount = {};
+        row.itemsList.split('|||').forEach(jsonStr => {
+          const parsed = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+          (Array.isArray(parsed) ? parsed : [parsed]).forEach(item => {
+            productCount[item.name] = (productCount[item.name] || 0) + (item.qty || 1);
+          });
         });
-        topProduct = Object.entries(productCount).length > 0
-          ? Object.entries(productCount).sort((a, b) => b[1] - a[1])[0][0]
-          : '-';
+        const sorted = Object.entries(productCount).sort((a, b) => b[1] - a[1]);
+        if (sorted.length > 0) topProduct = sorted[0][0];
       } catch (e) {
         console.error('Error parsing items:', e);
       }
     }
 
     res.json({
-      totalSales: row.totalSales || 0,
-      transactionCount: row.transactionCount || 0,
-      topProduct: topProduct
+      totalSales:       parseFloat(row.totalSales) || 0,
+      transactionCount: parseInt(row.transactionCount) || 0,
+      topProduct:       topProduct
     });
-  });
+  } catch (err) {
+    console.error('getDailySummary error:', err.message);
+    res.status(500).json({ error: 'Gagal mengambil summary harian', details: err.message });
+  }
 }
 
-// Get weekly statistics
-function getWeeklyStats(req, res) {
-  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const data = [0, 0, 0, 0, 0, 0, 0];
+// ─── GET WEEKLY STATS ─────────────────────────────────────────────────────────
+async function getWeeklyStats(req, res) {
+  const labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+  const data   = [0, 0, 0, 0, 0, 0, 0];
 
-  // ✅ Include all confirmed statuses
-  const CONFIRMED_STATUSES = ['completed', 'confirmed', 'paid'];
-  const placeholders = CONFIRMED_STATUSES.map(() => '?').join(',');
-
-  const sql = `
-    SELECT 
-      strftime('%w', date) as dayOfWeek,
-      SUM(total) as dailyTotal
-    FROM transactions
-    WHERE status IN (${placeholders})
-      AND date >= date('now', '-7 days')
-    GROUP BY dayOfWeek
-  `;
-
-  db.all(sql, CONFIRMED_STATUSES, (err, rows) => {
-    if (err) {
-      console.error('Error fetching weekly stats:', err);
-      return res.status(500).json({ error: 'Failed to fetch weekly stats' });
-    }
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         DAYOFWEEK(tanggal) AS dayOfWeek,
+         SUM(total)         AS dailyTotal
+       FROM transaksi
+       WHERE status IN ('completed','confirmed','paid')
+         AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+       GROUP BY DAYOFWEEK(tanggal)`
+    );
 
     if (rows && rows.length > 0) {
       rows.forEach(row => {
-        const dayIndex = parseInt(row.dayOfWeek);
-        // SQLite: Sunday=0, Monday=1... but we want Monday=0
-        const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1;
-        data[adjustedIndex] = row.dailyTotal || 0;
-      });
-    }
-
-    res.json({ labels, data });
-  });
-}
-
-// Get monthly statistics
-function getMonthlyStats(req, res) {
-  const labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-  const data = [0, 0, 0, 0];
-
-  // ✅ Include all confirmed statuses
-  const CONFIRMED_STATUSES = ['completed', 'confirmed', 'paid'];
-  const placeholders = CONFIRMED_STATUSES.map(() => '?').join(',');
-
-  const sql = `
-    SELECT 
-      CAST((strftime('%d', date) - 1) / 7 AS INTEGER) as week,
-      SUM(total) as weeklyTotal
-    FROM transactions
-    WHERE status IN (${placeholders})
-      AND date >= date('now', '-30 days')
-    GROUP BY week
-  `;
-
-  db.all(sql, CONFIRMED_STATUSES, (err, rows) => {
-    if (err) {
-      console.error('Error fetching monthly stats:', err);
-      return res.status(500).json({ error: 'Failed to fetch monthly stats' });
-    }
-
-    if (rows && rows.length > 0) {
-      rows.forEach(row => {
-        if (row.week < 4) {
-          data[row.week] = row.weeklyTotal || 0;
+        // MySQL DAYOFWEEK: 1=Sunday, 2=Monday, ... 7=Saturday
+        // Kita mau: 0=Senin, 1=Selasa, ..., 5=Sabtu, 6=Minggu
+        const dayIndex     = parseInt(row.dayOfWeek); // 1-7
+        const adjustedIdx  = dayIndex === 1 ? 6 : dayIndex - 2; // Sunday=6, Mon=0
+        if (adjustedIdx >= 0 && adjustedIdx < 7) {
+          data[adjustedIdx] = parseFloat(row.dailyTotal) || 0;
         }
       });
     }
 
     res.json({ labels, data });
-  });
+  } catch (err) {
+    console.error('getWeeklyStats error:', err.message);
+    res.json({ labels, data }); // Return zero data on error
+  }
+}
+
+// ─── GET MONTHLY STATS ────────────────────────────────────────────────────────
+async function getMonthlyStats(req, res) {
+  const labels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
+  const data   = [0, 0, 0, 0];
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         FLOOR((DAY(tanggal) - 1) / 7) AS week,
+         SUM(total) AS weeklyTotal
+       FROM transaksi
+       WHERE status IN ('completed','confirmed','paid')
+         AND tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+       GROUP BY week`
+    );
+
+    if (rows && rows.length > 0) {
+      rows.forEach(row => {
+        const weekIdx = parseInt(row.week);
+        if (weekIdx < 4) data[weekIdx] = parseFloat(row.weeklyTotal) || 0;
+      });
+    }
+
+    res.json({ labels, data });
+  } catch (err) {
+    console.error('getMonthlyStats error:', err.message);
+    res.json({ labels, data });
+  }
 }
 
 module.exports = {

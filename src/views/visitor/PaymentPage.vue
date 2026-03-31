@@ -188,11 +188,13 @@ import {
 import AppLayout from "@/components/layout/AppLayout.vue";
 import { useCartStore } from "@/stores/cart";
 import { useVisitorStore } from "@/stores/visitor";
+import { useOrderStore } from "@/stores/order";
 import { transactionService } from "@/services/transactionService";
 
 const router = useRouter();
 const cartStore = useCartStore();
 const visitorStore = useVisitorStore();
+const orderStore = useOrderStore();
 
 const selectedPaymentMethod = ref<"cash" | "transfer" | "qris" | null>(null);
 const note = ref("");
@@ -292,6 +294,15 @@ const confirmOrder = async () => {
     );
 
     if (result.success) {
+      // ✅ Simpan ke Pinia orderStore agar Dashboard langsung update
+      orderStore.addOrder({
+        customer: customerName,
+        items:    orderItems,
+        total:    total.value,
+        note:     note.value || undefined,
+        externalId: result.transactionId,
+      });
+
       // Show success toast with appropriate message
       const toastColor = result.isOffline ? 'warning' : 'success';
       const toastMessage = result.isOffline

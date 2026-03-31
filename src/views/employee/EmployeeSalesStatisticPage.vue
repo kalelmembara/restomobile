@@ -46,6 +46,8 @@
 import { ref, onMounted, computed } from 'vue';
 import AppLayout from '@/components/layout/AppLayout.vue';
 import { reportService } from '@/services/reportService';
+import { useOrderStore } from '@/stores/order';
+import { transactionService } from '@/services/transactionService';
 import { Bar } from 'vue-chartjs';
 import {
   Chart as ChartJS,
@@ -59,42 +61,75 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const period = ref<'weekly' | 'monthly'>('weekly');
-const chartData = ref({
-    labels: [] as string[],
+const orderStore = useOrderStore();
+const period     = ref<'weekly' | 'monthly'>('weekly');
+const chartData  = ref({
+    labels:   [] as string[],
     datasets: [] as any[]
 });
 
 const chartOptions = {
-    responsive: true,
+    responsive:          true,
     maintainAspectRatio: false,
-    plugins: {
-        legend: {
-            display: false
+    plugins: { legend: { display: false } },
+    scales: {
+        y: {
+            beginAtZero: true,
+            ticks: {
+                callback: (v: any) =>
+                    new Intl.NumberFormat('id-ID', {
+                        notation: 'compact', compactDisplay: 'short'
+                    }).format(v)
+            }
         }
     }
 };
 
-const loadData = async () => {
-    chartData.value = { labels: [], datasets: [] }; // Reset to show loading if needed or just update
-    
-    let data;
+/**
+ * Inject today's sales dari orderStore ke data index yang sesuai.
+ * Dipakai ketika backend mengembalikan 0 untuk hari ini tapi store punya data.
+ */
+function injectTodayFromStore(labels: string[], data: number[]): number[] {
+    if (orderStore.todayTotalSales === 0) return data;
+
+    const result = [...data];
+    const now    = new Date();
+
     if (period.value === 'weekly') {
-        data = await reportService.getWeeklyStats();
+        // labels: ['Sen','Sel','Rab','Kam','Jum','Sab','Min']
+        // dayOfWeek: 0=Sun,1=Mon,...,6=Sat → mapped: Sun=6, Mon=0, ...
+        const dayIdx = now.getDay(); // 0=Sun
+        const mapped = dayIdx === 0 ? 6 : dayIdx - 1;
+        if (result[mapped] === 0) result[mapped] = orderStore.todayTotalSales;
     } else {
-        data = await reportService.getMonthlyStats();
+        // labels: ['Minggu 1',...,'Minggu 4']
+        const weekIdx = Math.min(Math.floor((now.getDate() - 1) / 7), 3);
+        if (result[weekIdx] === 0) result[weekIdx] = orderStore.todayTotalSales;
     }
+    return result;
+}
+
+const loadData = async () => {
+    chartData.value = { labels: [], datasets: [] }; // reset → tampilkan loading
+
+    // Auto-sync offline transactions ke backend
+    await transactionService.syncOfflineTransactions().catch(() => {});
+
+    const raw = period.value === 'weekly'
+        ? await reportService.getWeeklyStats()
+        : await reportService.getMonthlyStats();
+
+    // Inject data hari ini dari store jika backend belum punya
+    const injectedData = injectTodayFromStore(raw.labels, raw.data);
 
     chartData.value = {
-        labels: data.labels,
-        datasets: [
-            {
-                label: 'Penjualan (IDR)',
-                backgroundColor: '#6366f1',
-                borderRadius: 8,
-                data: data.data
-            }
-        ]
+        labels:   raw.labels,
+        datasets: [{
+            label:           'Penjualan (IDR)',
+            backgroundColor: '#6366f1',
+            borderRadius:    8,
+            data:            injectedData,
+        }]
     };
 };
 
@@ -105,21 +140,19 @@ const setPeriod = (p: 'weekly' | 'monthly') => {
 
 const totalPeriodSales = computed(() => {
     if (!chartData.value.datasets[0]) return 0;
-    return chartData.value.datasets[0].data.reduce((a: number, b: number) => a + b, 0);
+    return (chartData.value.datasets[0].data as number[]).reduce((a, b) => a + b, 0);
 });
 
 const averageSales = computed(() => {
-    if (!chartData.value.datasets[0] || chartData.value.datasets[0].data.length === 0) return 0;
-    return totalPeriodSales.value / chartData.value.datasets[0].data.length;
+    const d = chartData.value.datasets[0]?.data as number[] | undefined;
+    if (!d || d.length === 0) return 0;
+    return totalPeriodSales.value / d.length;
 });
 
-const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(val);
-};
+const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(val);
 
-onMounted(() => {
-    loadData();
-});
+onMounted(() => loadData());
 </script>
 
 <style scoped>

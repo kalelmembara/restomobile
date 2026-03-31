@@ -1,58 +1,227 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from "vue"
+import { useRouter } from "vue-router"
+
+import AppLayout from "@/components/layout/AppLayout.vue"
+import MenuItemCard from "@/components/common/MenuItemCard.vue"
+import ProductDetailModal from "@/components/visitor/ProductDetailModal.vue"
+
+import { useCartStore } from "@/stores/cart"
+import { useVisitorStore } from "@/stores/visitor"
+import { menuService } from "@/services/menuService"
+import type { MenuItem, Category } from "@/services/menuService"
+
+/* ── Stores & Router ────────────────── */
+const router       = useRouter()
+const cartStore    = useCartStore()
+const visitorStore = useVisitorStore()
+
+/* ── State ──────────────────────────── */
+const selectedCategory = ref("Semua")
+const isLoading        = ref(false)
+const loadError        = ref("")
+const menus            = ref<MenuItem[]>([])
+const categories       = ref<Category[]>([])
+const selectedProduct  = ref<MenuItem | null>(null)
+
+/* ── Image helper ───────────────────── */
+const BACKEND_IMG = `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000'}/images/`
+
+function resolveImage(img?: string): string {
+  if (!img) return ''
+  if (img.startsWith('http') || img.startsWith('data:')) return img
+  if (img.startsWith('/')) return 'http://localhost' + img
+  return BACKEND_IMG + img
+}
+
+/* ── Load data ──────────────────────── */
+onMounted(async () => { await loadData() })
+
+async function loadData() {
+  isLoading.value = true
+  loadError.value = ""
+  try {
+    const [menuData, categoryData] = await Promise.all([
+      menuService.getMenuItems(),
+      menuService.getCategories()
+    ])
+    menus.value = menuData.map(item => ({
+      ...item,
+      id:        String(item.id),
+      price:     typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0),
+      image_url: resolveImage(item.image_url),
+    }))
+    categories.value = categoryData
+    if (menus.value.length === 0) {
+      loadError.value = "Belum ada menu tersedia. Pastikan backend berjalan."
+    }
+  } catch {
+    loadError.value = "Gagal memuat menu. Cek koneksi backend (localhost:3000)."
+    menus.value = []
+    categories.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+/* ── Computed ───────────────────────── */
+const categoryFilters = computed(() =>
+  ["Semua", ...categories.value.map(c => c.name)]
+)
+
+const filteredProducts = computed(() =>
+  selectedCategory.value === "Semua"
+    ? menus.value
+    : menus.value.filter(m => m.category === selectedCategory.value)
+)
+
+/* ── Add to cart (langsung dari card tombol Beli) ── */
+function addToCartDirect(menu: MenuItem) {
+  cartStore.addItem({
+    id:    String(menu.id),
+    name:  menu.name,
+    price: menu.price,
+    type:  menu.category === "Minuman" ? "drink" : "food",
+    image: menu.image_url ?? ""
+  })
+  // animasi badge sudah otomatis via cartStore.totalItems
+}
+
+/* ── Buka detail modal ────────────── */
+function openProductDetail(menu: MenuItem) {
+  selectedProduct.value = menu
+}
+
+/* ── Dari modal "Tambah ke Keranjang" ─ */
+function handleAddToCart(payload: { product: MenuItem; quantity: number }) {
+  const { product, quantity } = payload
+  const existing = cartStore.items.find(i => i.id === String(product.id))
+  if (existing) {
+    cartStore.updateQuantity(String(product.id), existing.quantity + quantity)
+  } else {
+    cartStore.addItem({
+      id:    String(product.id),
+      name:  product.name,
+      price: product.price,
+      type:  product.category === "Minuman" ? "drink" : "food",
+      image: product.image_url ?? ""
+    })
+    if (quantity > 1) cartStore.updateQuantity(String(product.id), quantity)
+  }
+  selectedProduct.value = null
+}
+
+/* ── Navigasi ke cart ───────────── */
+function goToCart() {
+  router.push("/cart")
+}
+
+function formatPrice(price: number) {
+  return price.toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
+}
+</script>
+
 <template>
   <AppLayout :show-back-button="true">
-    <div class="menu-page-content">
-      <!-- Header -->
-      <div class="menu-header">
-        <div class="header-content">
-          <h1 class="header-title">Menu Spesial</h1>
-          <p class="header-subtitle">Halo, {{ visitorStore.visitorName || 'Pengunjung' }}! 👋</p>
+    <div class="page">
+
+      <!-- ═══════ HERO HEADER ═══════════════════════════════════ -->
+      <div class="hero">
+        <div class="hero__deco hero__deco--1"></div>
+        <div class="hero__deco hero__deco--2"></div>
+        <div class="hero__top">
+          <div>
+            <p class="hero__greeting">👋 Halo, {{ visitorStore.visitorName || "Pengunjung" }}!</p>
+            <h1 class="hero__title">Menu Spesial</h1>
+          </div>
+          <!-- Cart shortcut button -->
+          <button
+            v-if="cartStore.totalItems > 0"
+            id="btn-open-cart"
+            class="hero__cart-btn"
+            @click="goToCart"
+          >
+            🛒
+            <span class="hero__cart-badge">{{ cartStore.totalItems }}</span>
+          </button>
+        </div>
+        <div class="hero__banner">
+          <p class="hero__banner-title">Menu Pilihan Hari Ini 🍽️</p>
+          <p class="hero__banner-sub">Nikmati cita rasa terbaik dari dapur kami</p>
         </div>
       </div>
 
-      <!-- Welcome & Filter Section -->
-      <div class="welcome-banner">
-        <div class="banner-content">
-          <h2 class="banner-title">Menu Pilihan Hari Ini</h2>
-          <p class="banner-subtitle">Nikmati cita rasa terbaik dari dapur kami</p>
+      <!-- ═══════ CATEGORY TABS ════════════════════════════════ -->
+      <div class="cat-bar">
+        <div class="cat-scroll">
+          <button
+            v-for="cat in categoryFilters"
+            :key="cat"
+            class="cat-btn"
+            :class="{ 'cat-btn--active': selectedCategory === cat }"
+            @click="selectedCategory = cat"
+          >{{ cat }}</button>
         </div>
       </div>
 
-      <!-- Category Filter -->
-      <div class="category-filter">
-        <button 
-          v-for="cat in categories" 
-          :key="cat"
-          :class="['category-btn', { active: selectedCategory === cat }]"
-          @click="selectedCategory = cat"
+      <!-- ═══════ LOADING ══════════════════════════════════════ -->
+      <div v-if="isLoading" class="state">
+        <div class="spinner"></div>
+        <p class="state__text">Memuat menu...</p>
+      </div>
+
+      <!-- ═══════ ERROR ════════════════════════════════════════ -->
+      <div v-else-if="loadError" class="state">
+        <div class="state__icon">⚠️</div>
+        <p class="state__text">{{ loadError }}</p>
+        <button class="btn-primary" @click="loadData">Coba Lagi</button>
+      </div>
+
+      <!-- ═══════ MENU CONTENT ══════════════════════════════════ -->
+      <template v-else>
+        <div class="list-header">
+          <span class="list-header__title">
+            {{ selectedCategory === 'Semua' ? 'Semua Menu' : selectedCategory }}
+          </span>
+          <span class="list-header__badge">{{ filteredProducts.length }} item</span>
+        </div>
+
+        <div v-if="filteredProducts.length === 0" class="state">
+          <div class="state__icon">🍽️</div>
+          <p class="state__text">Tidak ada menu di kategori ini.</p>
+        </div>
+
+        <div v-else class="menu-grid">
+          <MenuItemCard
+            v-for="product in filteredProducts"
+            :key="product.id"
+            :item="product"
+            @click="openProductDetail(product)"
+            @add="addToCartDirect(product)"
+          />
+        </div>
+
+        <div class="spacer-bottom"></div>
+      </template>
+
+      <!-- ═══════ FAB CART (fixed bottom) ═══════════════════════ -->
+      <transition name="fab">
+        <button
+          v-if="cartStore.totalItems > 0"
+          id="btn-view-cart-fab"
+          class="fab"
+          @click="goToCart"
         >
-          {{ cat }}
+          <span class="fab__icon">🛒</span>
+          <span class="fab__label">Lihat Keranjang</span>
+          <span class="fab__right">
+            <span class="fab__count">{{ cartStore.totalItems }}</span>
+            <span class="fab__price">{{ formatPrice(cartStore.totalPrice) }}</span>
+          </span>
         </button>
-      </div>
+      </transition>
 
-      <!-- Menu Items Grid -->
-      <div class="menu-container">
-        <MenuItemCard
-          v-for="product in filteredProducts"
-          :key="product.id"
-          :item="product"
-          @click="openProductDetail(product)"
-          @add="openProductDetail(product)"
-        />
-      </div>
-
-      <!-- Shopping Cart FAB -->
-      <div v-if="cartStore.totalItems > 0" class="fab-cart" @click="showCart = true">
-        <div class="fab-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="9" cy="21" r="1"/>
-            <circle cx="20" cy="21" r="1"/>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-          </svg>
-        </div>
-        <div class="fab-badge">{{ cartStore.totalItems }}</div>
-      </div>
-
-      <!-- Product Detail Modal -->
+      <!-- ═══════ PRODUCT DETAIL MODAL ═════════════════════════ -->
       <ProductDetailModal
         v-if="selectedProduct"
         :product="selectedProduct"
@@ -60,241 +229,220 @@
         @add-to-cart="handleAddToCart"
       />
 
-      <!-- Cart Modal -->
-      <div v-if="showCart" class="cart-modal-overlay" @click="showCart = false">
-        <div class="cart-modal" @click.stop>
-          <div class="cart-header">
-            <h2>Keranjang Belanja</h2>
-            <button class="cart-close" @click="showCart = false">✕</button>
-          </div>
-          <div class="cart-items">
-            <div v-if="cartStore.items.length === 0" class="empty-cart">
-              <p>Keranjang masih kosong</p>
-            </div>
-            <div v-else>
-              <div v-for="item in cartStore.items" :key="item.id" class="cart-item">
-                <div class="cart-item-info">
-                    <!-- Use image if available, else usage placeholder or emoji logic if adapted -->
-                   <!-- For now simplifying display -->
-                  <div class="cart-item-details">
-                    <h4>{{ item.name }}</h4>
-                    <p>{{ formatPrice(item.price) }}</p>
-                  </div>
-                </div>
-                <div class="cart-item-actions">
-                  <button @click="cartStore.updateQuantity(item.id, item.quantity - 1)" class="remove-btn">−</button>
-                  <span class="item-qty">{{ item.quantity }}</span>
-                  <button @click="cartStore.addItem(item)" class="add-btn">+</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="cartStore.items.length > 0" class="cart-footer">
-            <div class="total-section">
-              <span>Total Harga:</span>
-              <span class="total-price">{{ formatPrice(cartStore.totalPrice) }}</span>
-            </div>
-            <button class="checkout-btn" @click="goToPayment">
-              <span>Lanjutkan Pembayaran</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   </AppLayout>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
-import { useRouter } from "vue-router";
-import AppLayout from "@/components/layout/AppLayout.vue";
-import MenuItemCard from "@/components/common/MenuItemCard.vue";
-import ProductDetailModal from "@/components/visitor/ProductDetailModal.vue";
-import { useCartStore } from "@/stores/cart";
-import { useVisitorStore } from "@/stores/visitor";
-import { menuManagementService, type Menu } from "@/services/menuManagementService";
-import { useMenuData } from "@/composables/useMenuData";
-
-const router = useRouter();
-const cartStore = useCartStore();
-const visitorStore = useVisitorStore();
-const { loadMenuData, menus: sharedMenus, categories: sharedCategories, isLoading: sharedIsLoading } = useMenuData();
-
-const selectedCategory = ref("Semua");
-const showCart = ref(false);
-const menus = ref<Menu[]>([]);
-const categories = ref<any[]>([]);
-const selectedProduct = ref<Menu | null>(null);
-
-console.log('🔧 [VisitorMenuPage] Component initialized');
-
-onMounted(async () => {
-  console.log('🔄 [VisitorMenuPage] Component mounted, loading data...');
-  await loadData();
-});
-
-async function loadData() {
-  try {
-    const data = await loadMenuData();
-    menus.value = data.menus;
-    categories.value = data.categories;
-    console.log('✅ [VisitorMenuPage] Data loaded successfully');
-  } catch (error) {
-    console.error('❌ [VisitorMenuPage] Error loading data:', error);
-    menus.value = [];
-    categories.value = [];
-  }
-}
-
-const filteredProducts = computed(() => {
-  console.log('🔍 [VisitorMenuPage] Filtering - selectedCategory:', selectedCategory.value, 'total menus:', menus.value.length);
-  
-  if (selectedCategory.value === "Semua") {
-    console.log('ℹ️  [VisitorMenuPage] Showing all menus');
-    return menus.value;
-  }
-  
-  // Filter by category - match by category_id
-  const categoryObj = categories.value.find(c => c.name === selectedCategory.value);
-  if (!categoryObj) {
-    console.warn('⚠️  [VisitorMenuPage] Category not found:', selectedCategory.value);
-    return [];
-  }
-  
-  const filtered = menus.value.filter(m => m.category_id === categoryObj.id);
-  console.log(`📊 [VisitorMenuPage] Filtered by "${selectedCategory.value}": ${filtered.length} items`);
-  return filtered;
-});
-
-const openProductDetail = (menu: Menu) => {
-    console.log('👁️  [VisitorMenuPage] Opening product detail:', menu.name);
-    selectedProduct.value = menu;
-};
-
-const handleAddToCart = (payload: { product: Menu; quantity: number }) => {
-    const { product, quantity } = payload;
-    console.log('🛒 [VisitorMenuPage] Adding to cart:', product.name, 'qty:', quantity);
-    
-    const existing = cartStore.items.find(i => i.id === product.id);
-    if(existing) {
-        cartStore.updateQuantity(product.id, existing.quantity + quantity);
-    } else {
-         // Add item to cart
-         cartStore.addItem({
-             id: product.id,
-             name: product.name,
-             price: product.price,
-             type: product.category_name || `Category ${product.category_id}`,
-             image: product.image_url || ''
-         });
-         // If qty > 1, update it immediately
-         if (quantity > 1) {
-             cartStore.updateQuantity(product.id, quantity);
-         }
-    }
-    
-    selectedProduct.value = null;
-    showCart.value = true;
-    console.log('✅ [VisitorMenuPage] Item added to cart');
-};
-
-const formatPrice = (price: number) => {
-  return price.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
-};
-
-const goToPayment = () => {
-  if (cartStore.items.length === 0) {
-    return;
-  }
-  showCart.value = false;
-  router.push("/payment");
-};
-</script>
-
 <style scoped>
-/* Reuse existing styles */
-.menu-page-content {
-  padding-bottom: 100px;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+.page {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f5f6fa;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
-.menu-header {
+
+/* ── HERO ────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 55%, #7c3aed 100%);
+  padding: 20px 20px 28px;
+}
+.hero__deco {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.hero__deco--1 { width: 160px; height: 160px; top: -50px; right: -40px; background: rgba(255,255,255,0.10); }
+.hero__deco--2 { width: 100px; height: 100px; bottom: -20px; left: -20px; background: rgba(255,255,255,0.07); }
+
+.hero__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  position: relative;
+}
+.hero__greeting {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.80);
+  margin: 0 0 6px;
+}
+.hero__title {
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.8px;
+  line-height: 1.15;
+}
+.hero__cart-btn {
+  position: relative;
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.18);
+  border: 1.5px solid rgba(255,255,255,0.30);
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.hero__cart-btn:active { background: rgba(255,255,255,0.28); }
+.hero__cart-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  min-width: 20px; height: 20px;
+  padding: 0 4px;
+  background: #ef4444;
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #6366f1;
+}
+.hero__banner {
+  background: rgba(255,255,255,0.14);
+  border: 1.5px solid rgba(255,255,255,0.22);
+  border-radius: 16px;
+  padding: 14px 16px;
+  position: relative;
+}
+.hero__banner-title { font-size: 15px; font-weight: 700; color: #ffffff; margin: 0 0 4px; }
+.hero__banner-sub   { font-size: 12px; color: rgba(255,255,255,0.75); margin: 0; }
+
+/* ── CATEGORY BAR ────────────────────────────────────────── */
+.cat-bar {
   position: sticky;
   top: 0;
   z-index: 50;
-  padding: 0 var(--spacing-md) var(--spacing-md);
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-color);
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #ebebf0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.cat-scroll {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.cat-scroll::-webkit-scrollbar { display: none; }
+
+.cat-btn {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 18px;
+  border: 1.5px solid #e0e0eb;
+  background: #f5f5fa;
+  color: #5a5a7a;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+.cat-btn:active { transform: scale(0.95); }
+.cat-btn--active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+}
+
+/* ── LIST HEADER ─────────────────────────────────────────── */
+.list-header {
   display: flex;
   align-items: center;
-  animation: slideDown 0.6s ease-out;
-  margin-top: -16px; 
-  padding-top: var(--spacing-xl); 
+  justify-content: space-between;
+  padding: 20px 16px 4px;
 }
-.header-content { flex: 1; }
-.header-title { font-size: var(--font-size-lg); font-weight: 800; color: var(--text-primary); margin: 0; letter-spacing: -0.5px; }
-.header-subtitle { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 4px 0 0 0; }
+.list-header__title { font-size: 16px; font-weight: 800; color: #1a1a2e; letter-spacing: -0.4px; }
+.list-header__badge { font-size: 12px; font-weight: 700; color: #6366f1; background: #eef0ff; padding: 3px 10px; border-radius: 10px; }
 
-.welcome-banner { padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md); animation: slideUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.banner-content { text-align: left; }
-.banner-title { font-size: var(--font-size-xl); font-weight: 900; color: var(--text-primary); margin: 0 0 8px 0; letter-spacing: -0.8px; }
-.banner-subtitle { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0; font-weight: 500; }
-
-.category-filter { padding: 0 var(--spacing-md) var(--spacing-md); display: flex; gap: 12px; overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; }
-.category-filter::-webkit-scrollbar { display: none; }
-.category-btn { padding: 10px 18px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.8); border-radius: var(--radius-full); color: var(--text-primary); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all var(--transition-normal); font-family: inherit; }
-.category-btn:hover { border-color: var(--primary-color); background: rgba(99, 102, 241, 0.05); }
-.category-btn.active { background: var(--primary-color); color: #ffffff; border-color: transparent; box-shadow: var(--shadow-md); }
-
-.menu-container { 
-  padding: 0 var(--spacing-md) 80px; 
-  display: grid; 
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
-  gap: var(--spacing-lg); 
-  animation: slideUp 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both; 
+/* ── MENU GRID ───────────────────────────────────────────── */
+.menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 12px 16px;
 }
+@media (min-width: 480px) { .menu-grid { grid-template-columns: repeat(2, 1fr); } }
 
-@media (max-width: 640px) {
-  .menu-container {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-md);
-  }
+.spacer-bottom { height: 110px; }
+
+/* ── STATES ──────────────────────────────────────────────── */
+.state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 14px; padding: 70px 20px; text-align: center;
 }
+.state__icon { font-size: 48px; }
+.state__text { font-size: 14px; color: #64748b; font-weight: 500; margin: 0; max-width: 260px; line-height: 1.6; }
 
-.fab-cart { position: fixed; bottom: 30px; right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--primary-color); box-shadow: var(--shadow-lg); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 40; transition: all var(--transition-normal); animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.fab-cart:hover { transform: scale(1.1); box-shadow: 0 12px 32px rgba(99, 102, 241, 0.5); }
-.fab-cart:active { transform: scale(0.95); }
-.fab-icon { color: white; display: flex; align-items: center; justify-content: center; }
-.fab-icon svg { width: 28px; height: 28px; }
-.fab-badge { position: absolute; top: -8px; right: -8px; background: var(--secondary-color); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; box-shadow: 0 4px 12px rgba(236, 72, 153, 0.4); }
+.spinner {
+  width: 38px; height: 38px;
+  border: 3.5px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.cart-modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: flex-end; animation: fadeIn 0.3s ease; }
-.cart-modal { background: white; width: 100%; max-height: 85vh; border-radius: 24px 24px 0 0; display: flex; flex-direction: column; overflow: hidden; animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.cart-header { padding: var(--spacing-md); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
-.cart-header h2 { font-size: var(--font-size-lg); font-weight: 800; color: var(--text-primary); margin: 0; }
-.cart-close { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-color); border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; transition: all var(--transition-normal); }
-.cart-close:hover { background: var(--border-color); color: var(--text-primary); }
-.cart-items { flex: 1; overflow-y: auto; padding: var(--spacing-md); }
-.empty-cart { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text-secondary); font-size: var(--font-size-sm); }
-.cart-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--bg-color); border-radius: var(--radius-md); margin-bottom: 12px; border: 1px solid transparent; transition: all var(--transition-fast); }
-.cart-item:hover { border-color: var(--primary-color); background: white; box-shadow: var(--shadow-sm); }
-.cart-item-info { display: flex; align-items: center; gap: 12px; flex: 1; }
-.cart-item-details h4 { margin: 0; font-size: var(--font-size-sm); font-weight: 700; color: var(--text-primary); }
-.cart-item-details p { margin: 4px 0 0 0; font-size: 12px; color: var(--primary-color); font-weight: 600; }
-.cart-item-actions { display: flex; align-items: center; gap: 8px; }
-.cart-item-actions button { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-color); background: white; color: var(--text-primary); cursor: pointer; font-weight: 700; transition: all var(--transition-fast); }
-.cart-item-actions button:hover { border-color: var(--primary-color); color: var(--primary-color); }
-.item-qty { min-width: 24px; text-align: center; font-weight: 700; color: var(--text-primary); }
-.cart-footer { padding: var(--spacing-md); border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 12px; background: white; }
-.total-section { display: flex; justify-content: space-between; align-items: center; font-size: 16px; font-weight: 700; color: var(--text-primary); }
-.total-price { color: var(--primary-color); font-size: 18px; }
-.checkout-btn { background: var(--primary-color); color: white; border: none; border-radius: var(--radius-md); padding: 14px 20px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all var(--transition-normal); box-shadow: var(--shadow-md); }
-.checkout-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); background: var(--primary-hover); }
-.checkout-btn svg { width: 18px; height: 18px; }
+.btn-primary {
+  padding: 11px 28px; border-radius: 22px; border: none;
+  background: #6366f1; color: white; font-size: 14px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+  transition: transform 0.15s;
+}
+.btn-primary:active { transform: scale(0.96); }
 
-@keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* ── FAB CART ────────────────────────────────────────────── */
+.fab {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 0 14px;
+  height: 54px;
+  border-radius: 27px;
+  border: none;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 8px 30px rgba(99,102,241,0.50);
+  transition: transform 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  max-width: calc(100vw - 32px);
+}
+.fab:active { transform: translateX(-50%) scale(0.96); }
+.fab__icon  { font-size: 20px; }
+.fab__label { font-size: 14px; font-weight: 700; }
+.fab__right { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+.fab__count {
+  min-width: 22px; height: 22px; padding: 0 5px;
+  border-radius: 11px; background: white; color: #6366f1;
+  font-size: 11px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+}
+.fab__price { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85); }
+
+/* FAB transition */
+.fab-enter-active, .fab-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.fab-enter-from, .fab-leave-to       { opacity: 0; transform: translateX(-50%) translateY(24px); }
 </style>

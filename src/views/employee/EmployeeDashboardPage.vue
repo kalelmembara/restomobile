@@ -119,131 +119,90 @@
 <script setup lang="ts">
 import { toastController } from '@ionic/vue';
 import { useRouter } from 'vue-router';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '@/components/layout/AppLayout.vue';
+import { useOrderStore } from '@/stores/order';
 import { orderService } from '@/services/orderService';
-import { Order, OrderStatus } from '@/types';
+import type { Order, OrderStatus } from '@/types';
 
-const router = useRouter();
+const router      = useRouter();
+const orderStore  = useOrderStore();
 const selectedStatus = ref<string>('all');
-const orders = ref<Order[]>([]);
-const stats = ref({ todayOrders: 0, totalSales: 0 });
 
 const statusLabels: Record<string, string> = {
-  all: 'Semua',
-  pending: 'Tertunda',
+  all:        'Semua',
+  pending:    'Tertunda',
   processing: 'Diproses',
-  ready: 'Siap',
-  completed: 'Selesai'
+  ready:      'Siap',
+  completed:  'Selesai',
 };
-
 const statuses = ['all', 'pending', 'processing', 'ready', 'completed'];
 
-// ✅ Define confirmed/paid statuses for filtering
-const CONFIRMED_STATUSES = ['completed', 'confirmed', 'paid'];
+// ── Computed dari store (reaktif real-time) ──────────────────
+const stats = computed(() => ({
+  todayOrders: orderStore.todayOrderCount,
+  totalSales:  orderStore.todayTotalSales,
+}));
 
-// ✅ Check if an order meets confirmation criteria
-const isOrderConfirmed = (order: Order): boolean => {
-  // Status check: must be in confirmed statuses
-  const statusMatch = CONFIRMED_STATUSES.includes(order.status?.toLowerCase() || '');
-  
-  // Extended check for future fields (is_confirmed, payment_status)
-  const hasConfirmedFlag = (order as any).is_confirmed === true;
-  const isPaidStatus = (order as any).payment_status === 'paid';
-  
-  return statusMatch || hasConfirmedFlag || isPaidStatus;
-};
+const filteredOrders = computed(() =>
+  orderStore.getFilteredOrders(selectedStatus.value)
+);
+
+// ── Format ───────────────────────────────────────────────────
+const formatPrice = (price: number) =>
+  price.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+
+// ── Load dari backend & merge ke store ───────────────────────
+async function loadFromBackend() {
+  try {
+    const fetched = await orderService.getOrders() as Order[];
+    if (fetched.length > 0) {
+      orderStore.mergeFromBackend(fetched);
+      console.log('✅ Merged', fetched.length, 'orders from backend');
+    }
+  } catch (err) {
+    console.warn('⚠️  Backend tidak tersedia, data dari store lokal digunakan.');
+  }
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
-  console.log('🔵 EmployeeDashboard mounted');
-  await loadData();
-  
-  // Auto-refresh setiap 2 detik
-  const refreshInterval = setInterval(async () => {
-    console.log('🔄 Auto-refresh triggered');
-    try {
-      await loadData();
-    } catch (error) {
-      console.error('Auto-refresh error:', error);
-    }
-  }, 2000);
-  
-  // Cleanup interval saat component unmount
-  return () => clearInterval(refreshInterval);
+  await loadFromBackend();
+
+  // Refresh dari backend setiap 5 detik (tidak perlu terlalu sering karena store sudah reaktif)
+  refreshTimer = setInterval(loadFromBackend, 5000);
 });
 
-const loadData = async () => {
-  try {
-    console.log('📊 loadData started');
-    console.log('orderService:', orderService);
-    
-    const fetchedOrders = await orderService.getOrders() as Order[];
-    console.log('📦 Fetched orders (raw):', fetchedOrders);
-    
-    // ✅ Filter to show only confirmed/paid orders
-    const confirmedOrders = fetchedOrders.filter(order => isOrderConfirmed(order));
-    console.log('📦 Filtered confirmed orders:', confirmedOrders);
-    orders.value = confirmedOrders;
-    
-    // ✅ Recalculate stats based on filtered orders
-    const todayOrders = confirmedOrders.length;
-    const totalSales = confirmedOrders.reduce((sum: number, order: Order) => sum + order.total, 0);
-    stats.value = { todayOrders, totalSales };
-    
-    console.log('📈 Calculated stats:', stats.value);
-    console.log('✅ loadData completed. Confirmed orders count:', orders.value.length);
-  } catch (error) {
-    console.error('❌ Error loading data:', error);
-  }
-};
-
-// ✅ Filter orders by confirmation status FIRST, then by selected status tab
-const confirmedOrders = computed(() => {
-  return orders.value.filter(order => isOrderConfirmed(order));
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer);
 });
 
-// ✅ Apply tab filter on top of confirmed orders
-const filteredOrders = computed(() => {
-  if (selectedStatus.value === 'all') {
-    return confirmedOrders.value;
-  }
-  return confirmedOrders.value.filter(order => order.status === selectedStatus.value);
-});
-
-const formatPrice = (price: number) => {
-  return price.toLocaleString("id-ID", { style: "currency", currency: "IDR" });
-};
-
+// ── Update status pesanan ────────────────────────────────────
 const handleStatusUpdate = async (order: Order) => {
-  const statusFlow: OrderStatus[] = ['pending', 'processing', 'ready', 'completed'];
-  const currentIndex = statusFlow.indexOf(order.status);
-  
-  if (currentIndex < statusFlow.length - 1) {
-    const nextStatus = statusFlow[currentIndex + 1];
-    const success = await orderService.updateOrderStatus(order.id, nextStatus);
-    
-    if (success) {
-      order.status = nextStatus; // Optimistic update or reload data
-      // ✅ Recalculate stats based on filtered orders after status update
-      const todayOrders = confirmedOrders.value.length;
-      const totalSales = confirmedOrders.value.reduce((sum: number, o: Order) => sum + o.total, 0);
-      stats.value = { todayOrders, totalSales };
+  const flow: OrderStatus[] = ['pending', 'processing', 'ready', 'completed'];
+  const idx = flow.indexOf(order.status);
+  if (idx >= flow.length - 1) return;
 
-      const toast = await toastController.create({
-        message: `Pesanan ${order.id} diperbarui ke ${statusLabels[nextStatus]}`,
-        duration: 2000,
-        position: 'top',
-        color: 'success'
-      });
-      await toast.present();
-    }
-  }
+  const nextStatus = flow[idx + 1];
+
+  // Update di store lokal (langsung reaktif)
+  orderStore.updateOrderStatus(order.id, nextStatus);
+
+  // Coba update ke backend jika tersedia (fire-and-forget)
+  orderService.updateOrderStatus(order.id, nextStatus).catch(() => {});
+
+  const toast = await toastController.create({
+    message:  `Pesanan ${order.id} → ${statusLabels[nextStatus]}`,
+    duration: 2000,
+    position: 'top',
+    color:    'success',
+  });
+  await toast.present();
 };
 
-const logout = async () => {
-  // Logic to clear session if any
-  router.push('/');
-};
+const logout = () => router.push('/');
 </script>
 
 <style scoped>

@@ -1,88 +1,65 @@
-import { MenuItem, Category } from '../types';
+import axios from 'axios'
 
-const menuItems: MenuItem[] = [
-    {
-        id: '1',
-        name: "Nasi Goreng Spesial",
-        description: "Nasi goreng dengan telur, ayam, dan sayuran premium",
-        price: 25000,
-        originalPrice: 27500,
-        icon: "🍛",
-        category: "Makanan",
-        discount: 10,
-    },
-    {
-        id: '2',
-        name: "Mie Ayam Bakso",
-        description: "Mie ayam dengan bakso dan pangsit goreng crispy",
-        price: 20000,
-        icon: "🍜",
-        category: "Makanan",
-    },
-    {
-        id: '3',
-        name: "Sate Ayam Premium",
-        description: "10 tusuk sate ayam dengan bumbu kacang spesial",
-        price: 30000,
-        originalPrice: 35000,
-        icon: "串",
-        category: "Makanan",
-        discount: 15,
-    },
-    {
-        id: '4',
-        name: "Gado-Gado Segar",
-        description: "Sayuran segar dengan bumbu kacang dan telur",
-        price: 18000,
-        icon: "🥗",
-        category: "Makanan",
-    },
-    {
-        id: '5',
-        name: "Es Teh Manis",
-        description: "Minuman teh manis dingin yang menyegarkan",
-        price: 5000,
-        icon: "🧋",
-        category: "Minuman",
-    },
-    {
-        id: '6',
-        name: "Jus Jeruk Segar",
-        description: "Jus jeruk natural tanpa pemanis buatan",
-        price: 12000,
-        icon: "🧃",
-        category: "Minuman",
-    },
-    {
-        id: '7',
-        name: "Kopi Espresso",
-        description: "Kopi espresso premium dari biji pilihan",
-        price: 15000,
-        icon: "☕",
-        category: "Minuman",
-    },
-];
+// ✅ Ambil base URL dari .env.local (VITE_API_URL=http://localhost:3000/api)
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
-const categories: Category[] = [
-    { id: '1', name: 'Semua' },
-    { id: '2', name: 'Makanan' },
-    { id: '3', name: 'Minuman' },
-];
+// ─── INTERFACES ───────────────────────────────────────────────────────────────
+
+// Sesuai kolom yang dikembalikan backend dari tabel db_resto.menu
+export interface MenuItem {
+  id: string | number
+  name: string          // ← nama_menu
+  description: string   // ← deskripsi
+  price: number         // ← harga
+  image_url?: string    // ← image
+  category: string      // ← nama_kategori dari JOIN
+  category_id?: number
+  stok?: number
+  status?: string
+  icon?: string
+  originalPrice?: number
+}
+
+// Sesuai response GET /api/menus/categories
+export interface Category {
+  id: number
+  name: string          // ← backend mengembalikan 'name' (alias nama_kategori)
+}
+
+// ─── SERVICE ──────────────────────────────────────────────────────────────────
 
 export const menuService = {
-    getMenuItems: async (): Promise<MenuItem[]> => {
-        // Simulate API delay
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve(menuItems);
-            }, 500);
-        });
-    },
-    getCategories: async (): Promise<Category[]> => {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve(categories);
-            }, 500);
-        });
+
+  /** GET /api/menus — ambil semua menu dari db_resto.menu */
+  getMenuItems: async (): Promise<MenuItem[]> => {
+    try {
+      const response = await axios.get<MenuItem[]>(`${API_URL}/menus`)
+      return response.data || []
+    } catch (error: any) {
+      console.error('❌ Gagal ambil menu:', error?.response?.data || error.message)
+      return []
     }
-};
+  },
+
+  /** GET /api/menus/categories — ambil daftar kategori */
+  getCategories: async (): Promise<Category[]> => {
+    try {
+      const response = await axios.get<Category[]>(`${API_URL}/menus/categories`)
+      return response.data || []
+    } catch (error: any) {
+      console.error('❌ Gagal ambil kategori:', error?.response?.data || error.message)
+      return []
+    }
+  },
+
+  /** GET /api/menus/category/:id — filter menu berdasarkan kategori_id */
+  getMenuByCategory: async (categoryId: number): Promise<MenuItem[]> => {
+    try {
+      const response = await axios.get<MenuItem[]>(`${API_URL}/menus/category/${categoryId}`)
+      return response.data || []
+    } catch (error: any) {
+      console.error('❌ Gagal ambil menu by kategori:', error?.response?.data || error.message)
+      return []
+    }
+  }
+}

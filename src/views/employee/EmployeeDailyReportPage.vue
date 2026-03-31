@@ -27,6 +27,9 @@
              <input type="date" v-model="selectedDate" @change="loadData" />
         </div>
         
+        <div v-if="transactions.length === 0" class="empty-tx">
+            <p>Tidak ada transaksi pada tanggal ini.</p>
+        </div>
         <div class="transactions-list">
             <div v-for="tx in transactions" :key="tx.id" class="transaction-item">
                 <div class="tx-info">
@@ -34,6 +37,7 @@
                     <span class="tx-time">{{ tx.time }}</span>
                 </div>
                 <div class="tx-details">
+                    <p class="tx-customer">👤 {{ tx.customerName }}</p>
                     <p>{{ tx.items.join(', ') }}</p>
                     <span :class="['status', tx.status]">{{ tx.status }}</span>
                 </div>
@@ -50,35 +54,83 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import AppLayout from '@/components/layout/AppLayout.vue';
-import { reportService, Transaction } from '@/services/reportService';
+import { reportService } from '@/services/reportService';
+import type { Transaction } from '@/services/reportService';
+import { useOrderStore } from '@/stores/order';
+import { transactionService } from '@/services/transactionService';
 
-const currentDate = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+const orderStore  = useOrderStore();
+const currentDate = new Date().toLocaleDateString('id-ID', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+});
 const selectedDate = ref(new Date().toISOString().split('T')[0]);
+const isLoading    = ref(false);
 
 const summary = ref({
-    totalSales: 0,
+    totalSales:       0,
     transactionCount: 0,
-    topProduct: '-'
+    topProduct:       '-',
 });
 
 const transactions = ref<Transaction[]>([]);
 
+/** Jadikan data orderStore (Pinia) sebagai fallback untuk hari ini */
+function buildFallbackFromStore(): { sum: typeof summary.value; txs: Transaction[] } {
+    const orders = orderStore.orders;
+    const totalSales       = orders.reduce((s, o) => s + o.total, 0);
+    const transactionCount = orders.length;
+
+    // Hitung produk terlaris dari store
+    const cnt: Record<string, number> = {};
+    orders.forEach(o => o.items.forEach(i => { cnt[i.name] = (cnt[i.name] || 0) + i.qty; }));
+    const sorted     = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+    const topProduct = sorted.length > 0 ? sorted[0][0] : '-';
+
+    const txs: Transaction[] = orders.map(o => ({
+        id:           o.id,
+        time:         o.time,
+        customerName: o.customer,
+        items:        o.items.map(i => i.name),
+        total:        o.total,
+        status:       'completed',
+    }));
+
+    return { sum: { totalSales, transactionCount, topProduct }, txs };
+}
+
 const loadData = async () => {
-    // In a real app, pass selectedDate to service
-    const sum = await reportService.getDailySummary();
-    const txs = await reportService.getTodayTransactions();
-    
-    summary.value = sum;
-    transactions.value = txs;
+    isLoading.value = true;
+    try {
+        // 1. Coba sync offline transactions dulu
+        await transactionService.syncOfflineTransactions();
+
+        // 2. Ambil dari backend
+        const [sum, txs] = await Promise.all([
+            reportService.getDailySummary(selectedDate.value),
+            reportService.getTodayTransactions(selectedDate.value),
+        ]);
+
+        // 3. Jika hari ini dan backend tidak ada data, pakai orderStore
+        const isToday = selectedDate.value === new Date().toISOString().split('T')[0];
+        if (sum.transactionCount === 0 && txs.length === 0 && isToday && orderStore.orders.length > 0) {
+            const fallback = buildFallbackFromStore();
+            summary.value      = fallback.sum;
+            transactions.value = fallback.txs;
+        } else {
+            summary.value      = sum;
+            transactions.value = txs;
+        }
+    } catch (err) {
+        console.error('[DailyReport] loadData error:', err);
+    } finally {
+        isLoading.value = false;
+    }
 };
 
-onMounted(() => {
-    loadData();
-});
+onMounted(() => loadData());
 
-const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(val);
-};
+const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(val);
 </script>
 
 <style scoped>
@@ -254,10 +306,29 @@ const formatCurrency = (val: number) => {
 .status.cancelled { background-color: #fee2e2; color: #991b1b; }
 .status.pending { background-color: #ffedd5; color: #9a3412; }
 
+.tx-customer {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin: 0 0 4px;
+}
+
+.empty-tx {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    background: white;
+    border-radius: var(--radius-md);
+    border: 2px dashed var(--border-color);
+    margin-bottom: 12px;
+}
+
 .tx-total {
     font-weight: 800;
     color: var(--primary-color);
     font-size: var(--font-size-sm);
+    white-space: nowrap;
 }
 
 @keyframes slideDown {
