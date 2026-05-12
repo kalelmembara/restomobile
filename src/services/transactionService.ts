@@ -194,7 +194,7 @@ export const transactionService = {
     paymentMethod: 'cash' | 'transfer' | 'qris',
     note?: string,
     customerName?: string
-  ): Promise<{ success: boolean; transactionId?: string; message: string; isOffline?: boolean }> {
+  ): Promise<{ success: boolean; transactionId?: string; message: string; isOffline?: boolean; errorCategory?: string }> {
     const now = new Date();
     const date = now.toISOString().split('T')[0];
     const time = now.toLocaleTimeString('id-ID', {

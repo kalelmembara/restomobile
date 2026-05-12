@@ -52,7 +52,7 @@ export const menuManagementService = {
     }
   },
 
-  async addCategory(name: string, description?: string, icon?: string): Promise<Category> {
+  async addCategory(name: string, description?: string): Promise<Category> {
     try {
       console.log(`📝 Adding category: ${name}`);
       
@@ -61,8 +61,7 @@ export const menuManagementService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           name, 
-          description: description || null, 
-          icon: icon || '📌' 
+          description: description || null
         })
       });
 
@@ -79,6 +78,7 @@ export const menuManagementService = {
       throw error;
     }
   },
+
 
   async deleteCategory(categoryId: number): Promise<any> {
     try {
@@ -144,8 +144,7 @@ export const menuManagementService = {
     name: string,
     categoryId: number,
     price: number,
-    description?: string,
-    imageUrl?: string
+    description?: string
   ): Promise<Menu> {
     try {
       console.log(`📝 Creating menu: ${name}`);
@@ -157,8 +156,7 @@ export const menuManagementService = {
           name,
           categoryId,
           price: parseFloat(price.toString()),
-          description: description || null,
-          imageUrl: imageUrl || null
+          description: description || null
         })
       });
 
@@ -181,8 +179,7 @@ export const menuManagementService = {
     name: string,
     categoryId: number,
     price: number,
-    description?: string,
-    imageUrl?: string
+    description?: string
   ): Promise<any> {
     try {
       console.log(`📝 Updating menu ${id}: ${name}`);
@@ -194,8 +191,7 @@ export const menuManagementService = {
           name,
           categoryId,
           price: parseFloat(price.toString()),
-          description: description || null,
-          imageUrl: imageUrl || null
+          description: description || null
         })
       });
 

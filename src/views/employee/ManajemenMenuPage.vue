@@ -154,8 +154,7 @@ async function handleAddMenu(formData: any) {
       formData.name,
       formData.categoryId,
       formData.price,
-      formData.description,
-      formData.imageUrl
+      formData.description
     );
     showToast("✅ Menu berhasil ditambahkan!", "success");
     clearMenuCache();
@@ -183,8 +182,7 @@ async function handleUpdateMenu(formData: any) {
       formData.name,
       formData.categoryId,
       formData.price,
-      formData.description,
-      formData.imageUrl
+      formData.description
     );
     showToast("✅ Menu berhasil diperbarui!", "success");
     showEditModal.value = false;

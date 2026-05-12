@@ -61,20 +61,7 @@
         />
       </div>
 
-      <!-- Image URL -->
-      <div class="form-group">
-        <label class="label">URL Gambar (Opsional)</label>
-        <input
-          v-model="form.imageUrl"
-          type="url"
-          class="input"
-          placeholder="https://example.com/image.jpg"
-        />
-        <small v-if="form.imageUrl" class="image-preview-label">Preview:</small>
-        <div v-if="form.imageUrl" class="image-preview">
-          <img :src="form.imageUrl" :alt="form.name" />
-        </div>
-      </div>
+
 
       <!-- Submit Button -->
       <button type="submit" class="btn-submit" :disabled="isLoading">
@@ -86,33 +73,34 @@
     <!-- Add Category Form Modal -->
     <div v-if="showAddCategoryForm" class="modal-overlay" @click="showAddCategoryForm = false">
       <div class="modal-content" @click.stop>
-        <h3>Tambah Kategori Baru</h3>
-        <input
-          v-model="newCategoryForm.name"
-          type="text"
-          class="input"
-          placeholder="Nama kategori (misal: Paket Hemat)"
-          @keyup.enter="submitNewCategory"
-        />
-        <input
-          v-model="newCategoryForm.icon"
-          type="text"
-          class="input"
-          placeholder="Icon (emoji, misal: 🎉)"
-          maxlength="3"
-        />
-        <textarea
-          v-model="newCategoryForm.description"
-          class="input textarea"
-          placeholder="Deskripsi (opsional)"
-          rows="2"
-        />
+        <!-- Modal Header -->
+        <div class="modal-header">
+          <h3>Tambah Kategori Baru</h3>
+          <button class="modal-close" @click="showAddCategoryForm = false" type="button">✕</button>
+        </div>
+        <!-- Modal Body -->
+        <div class="modal-body">
+          <input
+            v-model="newCategoryForm.name"
+            type="text"
+            class="input"
+            placeholder="Nama kategori"
+            @keyup.enter="submitNewCategory"
+          />
+          <textarea
+            v-model="newCategoryForm.description"
+            class="input textarea"
+            placeholder="Deskripsi (opsional)"
+            rows="2"
+          />
+        </div>
+        <!-- Modal Footer -->
         <div class="modal-buttons">
-          <button @click="showAddCategoryForm = false" class="btn-cancel">
+          <button type="button" @click="showAddCategoryForm = false" class="btn-cancel">
             Batal
           </button>
-          <button @click="submitNewCategory" class="btn-submit-modal" :disabled="isLoading">
-            Tambah
+          <button type="button" @click="submitNewCategory" class="btn-submit-modal" :disabled="isLoading">
+            {{ isLoading ? "Menambahkan..." : "Tambah" }}
           </button>
         </div>
       </div>
@@ -143,13 +131,11 @@ const form = ref({
   categoryId: "",
   price: null,
   description: "",
-  imageUrl: "",
 });
 
 const showAddCategoryForm = ref(false);
 const newCategoryForm = ref({
   name: "",
-  icon: "📌",
   description: "",
 });
 
@@ -164,7 +150,6 @@ function submitForm() {
     categoryId: parseInt(form.value.categoryId),
     price: form.value.price,
     description: form.value.description || null,
-    imageUrl: form.value.imageUrl || null,
   });
 
   // Reset form
@@ -173,7 +158,6 @@ function submitForm() {
     categoryId: "",
     price: null,
     description: "",
-    imageUrl: "",
   };
 }
 
@@ -185,13 +169,11 @@ function submitNewCategory() {
 
   emit("add-category", {
     name: newCategoryForm.value.name,
-    icon: newCategoryForm.value.icon,
     description: newCategoryForm.value.description,
   });
 
   newCategoryForm.value = {
     name: "",
-    icon: "📌",
     description: "",
   };
   showAddCategoryForm.value = false;
@@ -289,25 +271,7 @@ function submitNewCategory() {
   color: var(--primary-color);
 }
 
-.image-preview-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  margin-top: var(--spacing-sm);
-}
 
-.image-preview {
-  margin-top: var(--spacing-md);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  max-width: 200px;
-  border: 1px solid var(--border-color);
-}
-
-.image-preview img {
-  width: 100%;
-  height: auto;
-  object-fit: cover;
-}
 
 .btn-submit {
   display: flex;
@@ -338,89 +302,169 @@ function submitNewCategory() {
 }
 
 /* Modal */
+/* ── MODAL OVERLAY ────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: var(--spacing-md);
-  animation: fadeIn 0.3s ease;
+  padding: 16px;
+  animation: fadeIn 0.2s ease;
 }
 
 @keyframes fadeIn {
   from { opacity: 0; }
-  to { opacity: 1; }
+  to   { opacity: 1; }
 }
 
+/* ── MODAL CONTENT ────────────────────────────────────── */
 .modal-content {
-  background: var(--surface-color);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  max-width: 400px;
+  background: #ffffff;
+  border-radius: 20px;
+  max-width: 420px;
   width: 100%;
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    0 25px 60px rgba(15, 23, 42, 0.20),
+    0 8px 24px rgba(99, 102, 241, 0.10);
+  overflow: hidden;
+  animation: slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.modal-content h3 {
-  margin: 0 0 var(--spacing-md) 0;
-  font-size: var(--font-size-lg);
-  color: var(--text-primary);
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
-.modal-content .input {
-  width: 100%;
-  margin-bottom: var(--spacing-md);
+/* ── MODAL HEADER ─────────────────────────────────────── */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
 }
 
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: none;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.modal-close:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+/* ── MODAL BODY ───────────────────────────────────────── */
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 24px;
+}
+
+/* Override: input di dalam modal tidak pakai margin-bottom */
+.modal-body .input {
+  margin-bottom: 0;
+}
+
+/* ── MODAL BUTTONS ────────────────────────────────────── */
 .modal-buttons {
   display: flex;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-lg);
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid #f1f5f9;
 }
 
+/* ─ Tombol Batal ─ */
 .btn-cancel {
   flex: 1;
-  padding: var(--spacing-md);
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  height: 44px;
+  padding: 0 16px;
+  background: #f1f5f9;
+  color: #334155;                      /* ← teks slate-700, selalu terlihat */
+  border: 1.5px solid #cbd5e1;         /* ← border slate-300 */
+  border-radius: 12px;
   cursor: pointer;
+  font-size: 14px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  font-family: inherit;
+  transition: all 0.18s ease;
+  white-space: nowrap;
 }
 
 .btn-cancel:hover {
-  background: var(--surface-color);
-  border-color: var(--text-secondary);
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #1e293b;
+  transform: translateY(-1px);
 }
 
+.btn-cancel:active {
+  background: #cbd5e1;
+  transform: scale(0.97);
+}
+
+/* ─ Tombol Tambah ─ */
 .btn-submit-modal {
   flex: 1;
-  padding: var(--spacing-md);
-  background: var(--primary-color);
-  color: white;
+  height: 44px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  color: #ffffff;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   cursor: pointer;
-  font-weight: 600;
-  transition: all var(--transition-normal);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  transition: all 0.18s ease;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  white-space: nowrap;
 }
 
 .btn-submit-modal:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, #4f46e5, #6d28d9);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
+
+.btn-submit-modal:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.30);
 }
 
 .btn-submit-modal:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 @media (max-width: 768px) {
@@ -429,7 +473,19 @@ function submitNewCategory() {
   }
 
   .modal-content {
-    padding: var(--spacing-lg);
+    border-radius: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-buttons {
+    flex-direction: column;
+  }
+
+  .btn-cancel,
+  .btn-submit-modal {
+    flex: unset;
+    width: 100%;
   }
 }
 </style>

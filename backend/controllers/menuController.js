@@ -25,6 +25,7 @@ async function getCategories(req, res) {
 // ─── GET SEMUA MENU ───────────────────────────────────────────────────────────
 async function getMenus(req, res) {
   try {
+    // Fix: handle deleted_at yang berisi '' atau '0000-00-00 00:00:00' (bukan NULL)
     const [rows] = await db.query(`
       SELECT
         m.id,
@@ -38,9 +39,12 @@ async function getMenus(req, res) {
         COALESCE(k.nama_kategori, 'Umum')   AS category
       FROM menu m
       LEFT JOIN kategori k ON m.kategori_id = k.id
-      WHERE m.deleted_at IS NULL
+      WHERE (m.deleted_at IS NULL
+         OR CAST(m.deleted_at AS CHAR) = ''
+         OR CAST(m.deleted_at AS CHAR) = '0000-00-00 00:00:00')
       ORDER BY k.nama_kategori, m.nama_menu
     `);
+    console.log(`✅ getMenus: mengembalikan ${(rows||[]).length} menu`);
     res.json(rows || []);
   } catch (err) {
     console.error('getMenus error:', err.message);
@@ -65,7 +69,10 @@ async function getMenuById(req, res) {
         COALESCE(k.nama_kategori, 'Umum')   AS category
       FROM menu m
       LEFT JOIN kategori k ON m.kategori_id = k.id
-      WHERE m.id = ? AND m.deleted_at IS NULL
+      WHERE m.id = ?
+        AND (m.deleted_at IS NULL
+          OR CAST(m.deleted_at AS CHAR) = ''
+          OR CAST(m.deleted_at AS CHAR) = '0000-00-00 00:00:00')
     `, [id]);
 
     if (!rows || rows.length === 0) {
@@ -95,7 +102,10 @@ async function getMenusByCategory(req, res) {
         COALESCE(k.nama_kategori, 'Umum')   AS category
       FROM menu m
       LEFT JOIN kategori k ON m.kategori_id = k.id
-      WHERE m.kategori_id = ? AND m.deleted_at IS NULL
+      WHERE m.kategori_id = ?
+        AND (m.deleted_at IS NULL
+          OR CAST(m.deleted_at AS CHAR) = ''
+          OR CAST(m.deleted_at AS CHAR) = '0000-00-00 00:00:00')
       ORDER BY m.nama_menu
     `, [categoryId]);
     res.json(rows || []);

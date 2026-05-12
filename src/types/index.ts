@@ -36,6 +36,7 @@ export interface Order {
   id: string;
   customer: string;
   time: string;
+  date?: string;
   status: OrderStatus;
   items: OrderItem[];
   total: number;

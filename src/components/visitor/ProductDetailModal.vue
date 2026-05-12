@@ -5,7 +5,7 @@
       
       <div class="product-image-container">
         <img 
-          :src="product.image || 'https://via.placeholder.com/400'" 
+          :src="product.image_url || 'https://via.placeholder.com/400'" 
           :alt="product.name" 
           class="product-image" 
         />
@@ -36,11 +36,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { Menu } from "@/types/Menu"
+import type { MenuItem } from '@/services/menuService'
 
 // === Props ===
 const props = defineProps<{
-  product: Menu
+  product: MenuItem
 }>()
 
 const emit = defineEmits(['close', 'add-to-cart'])

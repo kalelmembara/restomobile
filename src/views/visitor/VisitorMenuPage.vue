@@ -20,44 +20,71 @@ const visitorStore = useVisitorStore()
 const selectedCategory = ref("Semua")
 const isLoading        = ref(false)
 const loadError        = ref("")
+const errorType        = ref<"backend" | "empty" | "">("")  // tipe error untuk tampilan berbeda
 const menus            = ref<MenuItem[]>([])
 const categories       = ref<Category[]>([])
 const selectedProduct  = ref<MenuItem | null>(null)
 
 /* ── Image helper ───────────────────── */
-const BACKEND_IMG = `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000'}/images/`
-
+// Gunakan URL relatif → Vite proxy forward ke http://localhost:3000/images/...
 function resolveImage(img?: string): string {
-  if (!img) return ''
-  if (img.startsWith('http') || img.startsWith('data:')) return img
-  if (img.startsWith('/')) return 'http://localhost' + img
-  return BACKEND_IMG + img
+  if (!img) return ""
+  if (img.startsWith("http") || img.startsWith("data:")) return img
+  if (img.startsWith("/images/")) return img           // sudah relatif
+  if (img.startsWith("/")) return img                  // path absolut lain
+  return `/images/${img}`                              // nama file saja → prepend /images/
 }
 
 /* ── Load data ──────────────────────── */
 onMounted(async () => { await loadData() })
 
 async function loadData() {
-  isLoading.value = true
-  loadError.value = ""
+  isLoading.value  = true
+  loadError.value  = ""
+  errorType.value  = ""
+
   try {
+    // Fetch menu & kategori secara paralel
     const [menuData, categoryData] = await Promise.all([
       menuService.getMenuItems(),
       menuService.getCategories()
     ])
+
+    // Normalisasi data menu
     menus.value = menuData.map(item => ({
       ...item,
       id:        String(item.id),
-      price:     typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0),
+      price:     typeof item.price === "string" ? parseFloat(item.price) : (item.price ?? 0),
       image_url: resolveImage(item.image_url),
     }))
-    categories.value = categoryData
-    if (menus.value.length === 0) {
-      loadError.value = "Belum ada menu tersedia. Pastikan backend berjalan."
+
+    // Jika backend kembalikan kategori → pakai itu
+    // Jika tidak → derive dari data menu (fallback)
+    if (categoryData.length > 0) {
+      categories.value = categoryData
+    } else {
+      const uniqueCats = [...new Set(menus.value.map(m => m.category).filter(Boolean))]
+      categories.value = uniqueCats.map((name, i) => ({ id: i + 1, name }))
     }
-  } catch {
-    loadError.value = "Gagal memuat menu. Cek koneksi backend (localhost:3000)."
-    menus.value = []
+
+    // Cek apakah menu benar-benar kosong
+    if (menus.value.length === 0) {
+      errorType.value = "empty"
+      loadError.value = "Menu belum tersedia di database."
+    }
+
+  } catch (err: any) {
+    // Bedakan: network error (backend mati) vs server error
+    const isNetworkError = !err?.response
+    errorType.value = "backend"
+    if (isNetworkError) {
+      loadError.value = "Tidak bisa terhubung ke server. Pastikan backend berjalan di port 3000."
+    } else {
+      const status = err?.response?.status
+      const msg    = err?.response?.data?.message || err.message
+      loadError.value = `Server error (${status}): ${msg}`
+    }
+    menus.value      = []
     categories.value = []
   } finally {
     isLoading.value = false
@@ -84,7 +111,6 @@ function addToCartDirect(menu: MenuItem) {
     type:  menu.category === "Minuman" ? "drink" : "food",
     image: menu.image_url ?? ""
   })
-  // animasi badge sudah otomatis via cartStore.totalItems
 }
 
 /* ── Buka detail modal ────────────── */
@@ -118,6 +144,10 @@ function goToCart() {
 
 function formatPrice(price: number) {
   return price.toLocaleString("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
+}
+
+function selectCategory(cat: string) {
+  selectedCategory.value = cat
 }
 </script>
 
@@ -159,7 +189,7 @@ function formatPrice(price: number) {
             :key="cat"
             class="cat-btn"
             :class="{ 'cat-btn--active': selectedCategory === cat }"
-            @click="selectedCategory = cat"
+            @click="selectCategory(cat)"
           >{{ cat }}</button>
         </div>
       </div>
@@ -167,14 +197,32 @@ function formatPrice(price: number) {
       <!-- ═══════ LOADING ══════════════════════════════════════ -->
       <div v-if="isLoading" class="state">
         <div class="spinner"></div>
-        <p class="state__text">Memuat menu...</p>
+        <p class="state__text">Memuat menu dari server...</p>
+        <p class="state__hint">Menghubungkan ke backend...</p>
       </div>
 
-      <!-- ═══════ ERROR ════════════════════════════════════════ -->
-      <div v-else-if="loadError" class="state">
-        <div class="state__icon">⚠️</div>
+      <!-- ═══════ ERROR — Backend Offline ═════════════════════ -->
+      <div v-else-if="loadError && errorType === 'backend'" class="state">
+        <div class="state__icon">🔌</div>
+        <p class="state__title">Backend Tidak Aktif</p>
         <p class="state__text">{{ loadError }}</p>
-        <button class="btn-primary" @click="loadData">Coba Lagi</button>
+        <div class="state__steps">
+          <p class="state__steps-title">Cara menjalankan backend:</p>
+          <code class="state__code">cd backend<br>node server.js</code>
+        </div>
+        <button class="btn-primary" @click="loadData">
+          🔄 Coba Lagi
+        </button>
+      </div>
+
+      <!-- ═══════ ERROR — Menu Kosong ══════════════════════════ -->
+      <div v-else-if="loadError && errorType === 'empty'" class="state">
+        <div class="state__icon">🍽️</div>
+        <p class="state__title">Belum Ada Menu</p>
+        <p class="state__text">Database kosong. Tambahkan menu melalui dashboard admin.</p>
+        <button class="btn-primary" @click="loadData">
+          🔄 Refresh
+        </button>
       </div>
 
       <!-- ═══════ MENU CONTENT ══════════════════════════════════ -->
@@ -187,8 +235,11 @@ function formatPrice(price: number) {
         </div>
 
         <div v-if="filteredProducts.length === 0" class="state">
-          <div class="state__icon">🍽️</div>
-          <p class="state__text">Tidak ada menu di kategori ini.</p>
+          <div class="state__icon">🔍</div>
+          <p class="state__text">Tidak ada menu di kategori "{{ selectedCategory }}".</p>
+          <button class="btn-secondary" @click="selectCategory('Semua')">
+            Lihat Semua Menu
+          </button>
         </div>
 
         <div v-else class="menu-grid">
@@ -378,16 +429,49 @@ function formatPrice(price: number) {
   padding: 12px 16px;
 }
 @media (min-width: 480px) { .menu-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 768px) { .menu-grid { grid-template-columns: repeat(3, 1fr); } }
 
 .spacer-bottom { height: 110px; }
 
 /* ── STATES ──────────────────────────────────────────────── */
 .state {
   display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 14px; padding: 70px 20px; text-align: center;
+  justify-content: center; gap: 12px; padding: 60px 24px; text-align: center;
 }
-.state__icon { font-size: 48px; }
-.state__text { font-size: 14px; color: #64748b; font-weight: 500; margin: 0; max-width: 260px; line-height: 1.6; }
+.state__icon  { font-size: 52px; line-height: 1; }
+.state__title { font-size: 16px; font-weight: 800; color: #1a1a2e; margin: 0; }
+.state__text  { font-size: 13px; color: #64748b; font-weight: 500; margin: 0; max-width: 280px; line-height: 1.65; }
+.state__hint  { font-size: 12px; color: #94a3b8; margin: 0; }
+
+/* Step-by-step cara start backend */
+.state__steps {
+  background: #f8f9ff;
+  border: 1.5px solid #e0e3f8;
+  border-radius: 14px;
+  padding: 14px 20px;
+  text-align: left;
+  width: 100%;
+  max-width: 320px;
+}
+.state__steps-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6366f1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+}
+.state__code {
+  display: block;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 12px;
+  color: #1e293b;
+  background: #e8eaf6;
+  border-radius: 8px;
+  padding: 10px 14px;
+  line-height: 1.8;
+  white-space: pre;
+}
 
 .spinner {
   width: 38px; height: 38px;
@@ -400,12 +484,23 @@ function formatPrice(price: number) {
 
 .btn-primary {
   padding: 11px 28px; border-radius: 22px; border: none;
-  background: #6366f1; color: white; font-size: 14px; font-weight: 700;
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  color: white; font-size: 14px; font-weight: 700;
   font-family: inherit; cursor: pointer;
   box-shadow: 0 4px 14px rgba(99,102,241,0.35);
   transition: transform 0.15s;
 }
 .btn-primary:active { transform: scale(0.96); }
+
+.btn-secondary {
+  padding: 10px 24px; border-radius: 22px;
+  border: 1.5px solid #6366f1;
+  background: transparent;
+  color: #6366f1; font-size: 13px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-secondary:active { background: #eef0ff; }
 
 /* ── FAB CART ────────────────────────────────────────────── */
 .fab {

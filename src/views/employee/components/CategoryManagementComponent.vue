@@ -17,12 +17,6 @@
           class="input"
           placeholder="Deskripsi"
         />
-        <input
-          v-model="newCategory.icon"
-          type="text"
-          class="input"
-          placeholder="Icon (emoji)"
-        />
         <button
           type="submit"
           class="btn-add"
@@ -31,7 +25,6 @@
           {{ isLoading ? "Menambahkan..." : "Tambah Kategori" }}
         </button>
       </form>
-      <p class="hint">💡 Tips: Gunakan emoji untuk icon kategori</p>
     </div>
 
     <!-- Categories List -->
@@ -47,7 +40,6 @@
       </div>
       <div v-else class="categories-grid">
         <div v-for="cat in categories" :key="cat.id" class="category-card">
-          <div class="category-icon">{{ cat.icon || "📦" }}</div>
           <div class="category-info">
             <h4>{{ cat.name }}</h4>
             <p v-if="cat.description">{{ cat.description }}</p>
@@ -88,7 +80,6 @@ const emit = defineEmits<Emits>();
 const newCategory = ref({
   name: "",
   description: "",
-  icon: "",
 });
 
 const isLoadingCategories = ref(false);
@@ -108,8 +99,7 @@ async function submitNewCategory() {
     isLoadingCategories.value = true;
     await menuManagementService.addCategory(
       newCategory.value.name.trim(),
-      newCategory.value.description.trim() || undefined,
-      newCategory.value.icon.trim() || "📦"
+      newCategory.value.description.trim() || undefined
     );
 
     const toast = await toastController.create({
@@ -122,7 +112,6 @@ async function submitNewCategory() {
     newCategory.value = {
       name: "",
       description: "",
-      icon: "",
     };
 
     emit("add");
@@ -264,11 +253,7 @@ h3 {
   cursor: not-allowed;
 }
 
-.hint {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
+
 
 /* Categories List Section */
 .categories-list-section {
@@ -326,12 +311,7 @@ h3 {
   box-shadow: var(--shadow-sm);
 }
 
-.category-icon {
-  font-size: 32px;
-  min-width: 50px;
-  text-align: center;
-  flex-shrink: 0;
-}
+
 
 .category-info {
   flex: 1;

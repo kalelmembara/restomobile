@@ -57,18 +57,7 @@
           />
         </div>
 
-        <!-- Image URL -->
-        <div class="form-group">
-          <label class="label">URL Gambar</label>
-          <input
-            v-model="form.imageUrl"
-            type="url"
-            class="input"
-          />
-          <div v-if="form.imageUrl" class="image-preview">
-            <img :src="form.imageUrl" :alt="form.name" />
-          </div>
-        </div>
+
 
         <!-- Buttons -->
         <div class="modal-buttons">
@@ -108,7 +97,6 @@ const form = ref({
   categoryId: 0,
   price: 0,
   description: "",
-  imageUrl: "",
 });
 
 watch(
@@ -120,7 +108,6 @@ watch(
         categoryId: newMenu.category_id,
         price: newMenu.price,
         description: newMenu.description || "",
-        imageUrl: newMenu.image_url || "",
       };
     }
   },
@@ -270,19 +257,7 @@ function submitForm() {
   font-family: var(--font-family);
 }
 
-.image-preview {
-  margin-top: var(--spacing-sm);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  max-height: 200px;
-}
 
-.image-preview img {
-  width: 100%;
-  height: auto;
-  object-fit: cover;
-}
 
 .modal-buttons {
   display: flex;
